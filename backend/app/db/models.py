@@ -51,7 +51,12 @@ class ResumeVersion(SQLModel, table=True):
 
 class Application(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    posting_id: int = Field(foreign_key="posting.id", index=True)
+    # unique=True: one application per posting, ever, enforced at the DB
+    # level — not just an app-level check-then-act guard, which is a race
+    # (two near-simultaneous tailor_application() calls can both pass a
+    # "does one exist yet?" check before either commits). This is what
+    # actually stops the duplicate, not just the check in tailor.py.
+    posting_id: int = Field(foreign_key="posting.id", unique=True)
     status: str = "draft"
     # draft | approved | rejected | filling | filled | submitted | failed | manual_needed
     base_resume_version: Optional[int] = Field(default=None, foreign_key="resumeversion.id")

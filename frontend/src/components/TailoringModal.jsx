@@ -80,8 +80,22 @@ export default function TailoringModal({ posting, onClose, onDone }) {
   const [applicationId, setApplicationId] = useState(null);
   const [tailoring, setTailoring] = useState(null);
   const [error, setError] = useState(null);
+  // React StrictMode double-invokes effects in development (same component
+  // instance, mount -> cleanup -> mount again) specifically to catch
+  // exactly this class of bug: api.applyToPosting() is a real, non-repeatable
+  // side effect (creates a DB row, fires a real Claude call), and the
+  // `cancelled` flag below only guards the state updates *after* the fetch,
+  // not the fetch itself — so without this ref, StrictMode fires it twice.
+  // This bit it once for real (two real applications got created 8 seconds
+  // apart for the same posting, and one was independently submitted before
+  // the duplicate was noticed). The ref persists across StrictMode's
+  // synthetic remount, so it reliably prevents the second invocation from
+  // firing the mutating call at all.
+  const firedRef = useRef(false);
 
   useEffect(() => {
+    if (firedRef.current) return;
+    firedRef.current = true;
     let cancelled = false;
     (async () => {
       try {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { LoadingScreen, ResumeDiffView, KeywordCoverage } from "./ResumeReview";
 import { ChatEditor } from "./TailoringModal";
@@ -45,8 +45,14 @@ export default function BatchQueueModal({ count, onClose, onChanged }) {
   const [submitResults, setSubmitResults] = useState({}); // id -> status
   const [error, setError] = useState(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  // Same StrictMode double-invoke hazard as TailoringModal's apply effect —
+  // api.prepareBatch() tailors N postings for real (N real Claude calls, N
+  // real draft rows). This guard makes sure it only fires once per mount.
+  const firedRef = useRef(false);
 
   useEffect(() => {
+    if (firedRef.current) return;
+    firedRef.current = true;
     let cancelled = false;
     (async () => {
       try {

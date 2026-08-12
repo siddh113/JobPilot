@@ -20,7 +20,11 @@ from datetime import datetime
 
 import httpx
 
-BASE_URL = "https://jsearch.p.rapidapi.com/search"
+# RapidAPI's JSearch listing moved its search endpoint to /search-v2 at
+# some point after this adapter was first written — confirmed against the
+# listing's own current "Endpoints" code snippet (the plain /search path
+# 404s: "Endpoint '/search' does not exist").
+BASE_URL = "https://jsearch.p.rapidapi.com/search-v2"
 
 
 @dataclass
@@ -83,8 +87,11 @@ def search(
     resp.raise_for_status()
     payload = resp.json()
 
+    # v2 wraps the job list one level deeper: {"data": {"jobs": [...], "cursor": ...}}
+    # instead of the old {"data": [...]}. Every field name inside a job
+    # object is unchanged.
     results: list[SearchPosting] = []
-    for job in payload.get("data", []):
+    for job in payload.get("data", {}).get("jobs", []):
         city = job.get("job_city")
         state = job.get("job_state")
         location_str = ", ".join(p for p in [city, state] if p) or job.get("job_country")

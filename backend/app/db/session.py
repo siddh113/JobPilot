@@ -19,7 +19,15 @@ _INDEX_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS ix_posting_status ON posting (status)",
     "CREATE INDEX IF NOT EXISTS ix_posting_company_id ON posting (company_id)",
     "CREATE INDEX IF NOT EXISTS ix_matchscore_posting_id ON matchscore (posting_id)",
-    "CREATE INDEX IF NOT EXISTS ix_application_posting_id ON application (posting_id)",
+    # Unique, not just indexed: one application per posting, enforced by
+    # the DB itself — see the comment on Application.posting_id in
+    # models.py. Supersedes the old plain (non-unique) index on this
+    # column, which this makes redundant. Requires no duplicate posting_id
+    # values to already exist in the table — if this statement ever starts
+    # failing, that means duplicates crept back in and need cleaning up
+    # before it can succeed again.
+    "DROP INDEX IF EXISTS ix_application_posting_id",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_application_posting_id ON application (posting_id)",
 ]
 
 

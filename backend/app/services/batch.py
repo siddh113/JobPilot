@@ -18,7 +18,12 @@ from app.services.tailor import tailor_application
 
 def get_batch_candidates(count: int) -> list[int]:
     """Returns posting IDs for the top `count` matched-but-not-yet-tailored
-    postings, highest score first."""
+    postings, highest score first. The docstring always said
+    "not-yet-tailored" but the query never actually excluded postings that
+    already had an Application — tailoring stays status="matched" forever,
+    so a second batch run (or the "Tailor matched" pipeline button) would
+    happily re-tailor and duplicate an application that already existed.
+    The explicit exclusion here is the fix."""
     from app.db.models import MatchScore
 
     with get_session() as session:
@@ -26,6 +31,7 @@ def get_batch_candidates(count: int) -> list[int]:
             select(Posting, MatchScore)
             .join(MatchScore, MatchScore.posting_id == Posting.id)
             .where(Posting.status == "matched")
+            .where(Posting.id.not_in(select(Application.posting_id)))
             .order_by(MatchScore.final_score.desc())
         ).all()
 

@@ -4,6 +4,7 @@ import json
 import re
 from pathlib import Path
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from app.core.config import load_config
@@ -26,6 +27,8 @@ Hard rules:
 - Preserve the base resume's structure exactly: same sections, same jobs,
   same projects, same education entries. Only the emphasis, ordering within
   a section, and wording of existing bullets should change per posting.
+- Do not use em dashes (—) anywhere in the summary, bullets, or cover
+  letter. Use a comma, period, parentheses, or "and"/"but" instead.
 
 Output ONLY valid JSON (no markdown fences, no preamble) matching this exact shape:
 {
@@ -45,7 +48,14 @@ Output ONLY valid JSON (no markdown fences, no preamble) matching this exact sha
 def tailor_application(posting_id: int) -> int:
     """Generate a draft Application for a matched posting: structured JSON
     from Claude, rendered into a PDF matching the base resume's layout.
-    Returns application id."""
+    Returns application id.
+
+    Guards against duplicate applications here, not just at each caller —
+    a posting's status never advances past "matched" once tailored, so
+    without this check any caller that re-scans matched postings (batch
+    runs, the "Tailor matched" pipeline button) could re-tailor and
+    duplicate an application that already exists, firing a real Claude
+    call for nothing and leaving two drafts for the same job."""
     from anthropic import Anthropic
 
     cfg = load_config()
@@ -55,6 +65,11 @@ def tailor_application(posting_id: int) -> int:
         posting = session.get(Posting, posting_id)
         if posting is None:
             raise ValueError(f"No posting with id {posting_id}")
+        existing = session.exec(
+            select(Application).where(Application.posting_id == posting_id)
+        ).first()
+        if existing is not None:
+            raise ValueError(f"Posting {posting_id} already has application {existing.id} — not re-tailoring.")
 
     user_prompt = f"""Base resume:
 {cfg['_resume_text']}
@@ -89,7 +104,22 @@ Job posting — {posting.title}:
     )
     with get_session() as session:
         session.add(application)
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError:
+            # Lost a race against another call tailoring the same posting
+            # (the pre-check above is only a fast-path — this unique
+            # constraint is what actually makes it impossible). The
+            # Claude call already happened and is a sunk cost either way;
+            # what matters is not leaving a second Application row behind.
+            session.rollback()
+            existing = session.exec(
+                select(Application).where(Application.posting_id == posting_id)
+            ).first()
+            raise ValueError(
+                f"Posting {posting_id} already has application {existing.id if existing else '?'} "
+                "— lost a race to tailor it, not creating a duplicate."
+            )
         session.refresh(application)
         app_id = application.id
 
@@ -149,6 +179,8 @@ Hard rules (same as initial tailoring):
   experience, apply the spirit of it as far as the real resume allows and
   say so plainly in the explanation — don't silently comply by making
   something up.
+- Do not use em dashes (—) anywhere in the summary, bullets, or cover
+  letter. Use a comma, period, parentheses, or "and"/"but" instead.
 
 Output ONLY valid JSON (no markdown fences, no preamble) matching this
 exact shape:
@@ -235,7 +267,11 @@ Instruction from the candidate: {instruction}
 def tailor_all_matched() -> list[int]:
     ids = []
     with get_session() as session:
-        matched = session.exec(select(Posting).where(Posting.status == "matched")).all()
+        matched = session.exec(
+            select(Posting)
+            .where(Posting.status == "matched")
+            .where(Posting.id.not_in(select(Application.posting_id)))
+        ).all()
         posting_ids = [p.id for p in matched]
 
     for pid in posting_ids:
