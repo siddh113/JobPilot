@@ -14,11 +14,19 @@ async function request(path, options = {}) {
 
 export const api = {
   getDigest: () => request("/api/digest"),
-  getPostings: ({ status, actionable, limit = 100, offset = 0 } = {}) => {
+  getPostings: ({ status, actionable, country, maxHoursSincePosted, limit = 100, offset = 0 } = {}) => {
     const params = new URLSearchParams({ limit, offset });
     if (status) params.set("status", status);
     if (actionable) params.set("actionable", "true");
+    if (country) params.set("country", country);
+    if (maxHoursSincePosted) params.set("max_hours_since_posted", maxHoursSincePosted);
     return request(`/api/postings?${params.toString()}`);
+  },
+  getPostingCountries: ({ actionable, maxHoursSincePosted } = {}) => {
+    const params = new URLSearchParams();
+    if (actionable) params.set("actionable", "true");
+    if (maxHoursSincePosted) params.set("max_hours_since_posted", maxHoursSincePosted);
+    return request(`/api/postings/countries?${params.toString()}`);
   },
   skipPosting: (id) => request(`/api/postings/${id}/skip`, { method: "POST" }),
   applyToPosting: (id) => request(`/api/postings/${id}/apply`, { method: "POST" }),

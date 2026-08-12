@@ -301,9 +301,26 @@ around three tabs:
   already applied to) as a match-ring card with company badge, skill tags
   (`extract_skill_tags()` in `matcher.py` — genuine resume/posting token
   overlap, never invented), relative posted-time, and a filter bar (search,
-  workplace, company, sort). Filters only cover fields the schema actually
-  has — no degree/experience/visa filters, since `Posting` doesn't carry
-  that data and nothing here fabricates it. **Skip** sets the posting to
+  date posted, location/country, workplace, company, sort). Filters only
+  cover fields the schema actually has — no degree/experience/visa
+  filters, since `Posting` doesn't carry that data and nothing here
+  fabricates it. Date and country filters run server-side
+  (`GET /api/postings` takes `country` and `max_hours_since_posted`,
+  `GET /api/postings/countries` returns the distinct countries actually
+  present for the dropdown) rather than client-side over whatever page
+  happens to be loaded — with thousands of postings and paginated
+  results, filtering only the loaded page would make "Load more" look
+  broken for anything but the most common country. Country classification
+  (`app/services/geo.py::classify_country`) is the same curated-vocabulary,
+  honest-fallback approach as `extract_skill_tags` — free-text `location`
+  has no structured geo data, so it's substring matching against known US
+  states/countries/tech-hub cities, with an explicit "Other" (and
+  "Remote", for a bare "Remote" with no locale) bucket rather than a wrong
+  guess. Because that classification is Python-side, not SQL, filtering by
+  country does a lightweight id-only bulk fetch + classify pass before
+  applying `Posting.id.in_(...)` — see `_country_matching_ids()` in
+  `main.py` — so pagination and totals stay correct instead of being
+  computed after a page is already sliced. **Skip** sets the posting to
   `ignored` (`POST /api/postings/{id}/skip`) and removes the card. **Apply**
   opens `TailoringModal`: it calls `POST /api/postings/{id}/apply`
   (still runs `tailor_application()` synchronously, still creates the

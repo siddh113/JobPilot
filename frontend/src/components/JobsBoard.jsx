@@ -183,7 +183,15 @@ function FilterPill({ active, children, ...props }) {
   );
 }
 
-function FilterBar({ postings, filters, setFilters, onRefresh, refreshing }) {
+const DATE_OPTIONS = [
+  { value: "6", label: "Last 6 hours" },
+  { value: "24", label: "Last 24 hours" },
+  { value: "168", label: "Last 7 days" },
+  { value: "336", label: "Last 14 days" },
+  { value: "720", label: "Last 30 days" },
+];
+
+function FilterBar({ postings, filters, setFilters, onRefresh, refreshing, countryOptions }) {
   const companies = useMemo(
     () => [...new Set(postings.map((p) => p.company_name))].sort(),
     [postings]
@@ -193,10 +201,21 @@ function FilterBar({ postings, filters, setFilters, onRefresh, refreshing }) {
     (filters.search ? 1 : 0) +
     (filters.exclude ? 1 : 0) +
     (filters.workplace !== "all" ? 1 : 0) +
-    (filters.company !== "all" ? 1 : 0);
+    (filters.company !== "all" ? 1 : 0) +
+    (filters.country !== "all" ? 1 : 0) +
+    (filters.dateFilter ? 1 : 0);
 
   const clear = () =>
-    setFilters((f) => ({ search: "", exclude: "", workplace: "all", company: "all", sort: f.sort }));
+    setFilters((f) => ({
+      search: "",
+      exclude: "",
+      workplace: "all",
+      company: "all",
+      country: "all",
+      dateFilter: "",
+      sort: f.sort,
+      searchScope: f.searchScope,
+    }));
 
   return (
     <div className="border border-hairline rounded-lg p-3 mb-4">
@@ -236,6 +255,32 @@ function FilterBar({ postings, filters, setFilters, onRefresh, refreshing }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mt-3">
+        <FilterPill
+          active={!!filters.dateFilter}
+          value={filters.dateFilter}
+          onChange={(e) => setFilters((f) => ({ ...f, dateFilter: e.target.value }))}
+        >
+          <option value="">Date · All time</option>
+          {DATE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </FilterPill>
+
+        <FilterPill
+          active={filters.country !== "all"}
+          value={filters.country}
+          onChange={(e) => setFilters((f) => ({ ...f, country: e.target.value }))}
+        >
+          <option value="all">Location</option>
+          {countryOptions.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </FilterPill>
+
         <FilterPill
           active={filters.workplace !== "all"}
           value={filters.workplace}
@@ -287,8 +332,11 @@ export default function JobsBoard({ onAppliedTo }) {
     searchScope: "title",
     workplace: "all",
     company: "all",
+    country: "all",
+    dateFilter: "",
     sort: "match",
   });
+  const [countryOptions, setCountryOptions] = useState([]);
   const [applyingTo, setApplyingTo] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [total, setTotal] = useState(0);
@@ -301,11 +349,21 @@ export default function JobsBoard({ onAppliedTo }) {
   // applied to" filtering server-side now — with thousands of historical
   // postings sitting in the DB, fetching everything and filtering it in
   // the browser meant paying for (and rendering) rows nobody would ever
-  // see. A page here is a page of genuinely actionable postings.
+  // see. A page here is a page of genuinely actionable postings. Country
+  // and date are server-side too (same reasoning — filtering after a
+  // page is already sliced would make "Load more" look broken for
+  // anything but the most common country), so a change to either resets
+  // and refetches from the top rather than re-filtering what's loaded.
   const load = async (reset) => {
     try {
       const startOffset = reset ? 0 : offset;
-      const page = await api.getPostings({ actionable: true, limit: PAGE_SIZE, offset: startOffset });
+      const page = await api.getPostings({
+        actionable: true,
+        country: filters.country !== "all" ? filters.country : undefined,
+        maxHoursSincePosted: filters.dateFilter || undefined,
+        limit: PAGE_SIZE,
+        offset: startOffset,
+      });
       setTotal(page.total);
       setPostings((prev) => (reset ? page.items : [...(prev || []), ...page.items]));
       setOffset(startOffset + page.items.length);
@@ -317,7 +375,16 @@ export default function JobsBoard({ onAppliedTo }) {
 
   useEffect(() => {
     load(true);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.country, filters.dateFilter]);
+
+  useEffect(() => {
+    api
+      .getPostingCountries({ actionable: true, maxHoursSincePosted: filters.dateFilter || undefined })
+      .then(setCountryOptions)
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.dateFilter]);
 
   const loadMore = async () => {
     setLoadingMore(true);
@@ -410,9 +477,23 @@ export default function JobsBoard({ onAppliedTo }) {
         setFilters={setFilters}
         onRefresh={runRefresh}
         refreshing={refreshing}
+        countryOptions={countryOptions}
       />
 
-      {postings.length === 0 ? (
+      {postings.length === 0 && (filters.country !== "all" || filters.dateFilter) ? (
+        <div className="border border-hairline rounded-lg p-8 text-center">
+          <p className="text-paper-dim font-mono text-sm">
+            No jobs match this date/location filter.{" "}
+            <button
+              onClick={() => setFilters((f) => ({ ...f, country: "all", dateFilter: "" }))}
+              className="text-teal underline underline-offset-2 cursor-pointer"
+            >
+              Clear it
+            </button>{" "}
+            to see more.
+          </p>
+        </div>
+      ) : postings.length === 0 ? (
         <div className="border border-hairline rounded-lg p-8 text-center">
           <p className="text-paper-dim font-mono text-sm">
             No jobs waiting on a decision yet.{" "}

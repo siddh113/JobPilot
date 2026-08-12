@@ -7,7 +7,7 @@ applications, nothing here adds a bulk/no-confirm path the CLI doesn't have.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
@@ -19,6 +19,7 @@ from sqlmodel import select
 from app.core.config import load_config
 from app.db.models import Application, Company, MatchScore, Posting
 from app.db.session import get_session, init_db
+from app.services.geo import classify_country
 from app.services.matcher import extract_skill_tags
 
 app = FastAPI(title="JobPilot API")
@@ -119,10 +120,64 @@ class PostingsPage(BaseModel):
     items: list[PostingOut]
 
 
+def _base_postings_query(status: Optional[str], actionable: bool, max_hours_since_posted: Optional[int]):
+    """Shared status/actionable/date filtering used by both the postings
+    list and the countries facet — one place defining what 'in scope'
+    means, so the facet options and the actual results can't drift apart."""
+    query = select(Posting)
+    if status:
+        query = query.where(Posting.status == status)
+    if actionable:
+        query = query.where(Posting.status.not_in(["filtered_out", "ignored"]))
+        query = query.where(Posting.id.not_in(select(Application.posting_id)))
+    if max_hours_since_posted is not None:
+        cutoff = datetime.utcnow() - timedelta(hours=max_hours_since_posted)
+        # Fall back to first_seen_at when a posting has no posted_at — an
+        # unparsed/missing posted date shouldn't silently exclude a
+        # posting, and first_seen_at is always populated. Mirrors the
+        # same "unknown age doesn't hide a possible fit" rule the
+        # max_days_since_posted filter already uses (filters.py).
+        query = query.where(func.coalesce(Posting.posted_at, Posting.first_seen_at) >= cutoff)
+    return query
+
+
+def _country_matching_ids(base_query, country: str) -> set[int]:
+    """Country filtering needs Python-side classification (free-text
+    location, no structured geo data — see geo.py), which can't be
+    expressed as a SQL WHERE clause. Fetch just the columns classification
+    needs for every posting matching the *other* filters, classify in
+    Python, and return the matching id set — applied as an additional
+    Posting.id.in_(...) filter before COUNT/LIMIT/OFFSET so pagination and
+    totals stay correct instead of being computed after a page is already
+    sliced."""
+    subq = base_query.subquery()
+    with get_session() as session:
+        rows = session.exec(select(subq.c.id, subq.c.location, subq.c.remote)).all()
+    return {pid for pid, location, remote in rows if classify_country(location, remote) == country}
+
+
+@app.get("/api/postings/countries", response_model=list[str])
+def list_posting_countries(
+    status: Optional[str] = None,
+    actionable: bool = False,
+    max_hours_since_posted: Optional[int] = None,
+):
+    """Distinct countries actually present in the current in-scope
+    postings, for the country filter dropdown — options are never dead
+    (0 results) and never missing a country that's genuinely there."""
+    subq = _base_postings_query(status, actionable, max_hours_since_posted).subquery()
+    with get_session() as session:
+        rows = session.exec(select(subq.c.location, subq.c.remote)).all()
+    countries = {classify_country(location, remote) for location, remote in rows}
+    return sorted(countries)
+
+
 @app.get("/api/postings", response_model=PostingsPage)
 def list_postings(
     status: Optional[str] = None,
     actionable: bool = False,
+    country: Optional[str] = None,
+    max_hours_since_posted: Optional[int] = None,
     limit: int = 100,
     offset: int = 0,
 ):
@@ -137,14 +192,12 @@ def list_postings(
     except FileNotFoundError:
         resume_text = ""
 
-    with get_session() as session:
-        query = select(Posting)
-        if status:
-            query = query.where(Posting.status == status)
-        if actionable:
-            query = query.where(Posting.status.not_in(["filtered_out", "ignored"]))
-            query = query.where(Posting.id.not_in(select(Application.posting_id)))
+    query = _base_postings_query(status, actionable, max_hours_since_posted)
+    if country:
+        matching_ids = _country_matching_ids(query, country)
+        query = query.where(Posting.id.in_(matching_ids))
 
+    with get_session() as session:
         total = session.exec(select(func.count()).select_from(query.subquery())).one()
 
         page_query = query.order_by(Posting.first_seen_at.desc()).limit(limit).offset(offset)
