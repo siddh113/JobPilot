@@ -200,7 +200,7 @@ def list_postings(
     with get_session() as session:
         total = session.exec(select(func.count()).select_from(query.subquery())).one()
 
-        page_query = query.order_by(Posting.first_seen_at.desc()).limit(limit).offset(offset)
+        page_query = query.order_by(Posting.first_seen_at.desc(), Posting.id.desc()).limit(limit).offset(offset)
         postings = session.exec(page_query).all()
 
         if not postings:
