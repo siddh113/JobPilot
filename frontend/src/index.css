@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Fraunces", ui-serif, serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-ink: #12141a;
+  --color-panel: #1b1e27;
+  --color-panel-raised: #21252f;
+  --color-hairline: #2b2f3b;
+  --color-paper: #e7e5de;
+  --color-paper-dim: #9a9890;
+  --color-teal: #4fd8b0;
+  --color-teal-dim: #2a5c4d;
+  --color-amber: #f0b429;
+  --color-amber-dim: #5c471a;
+  --color-rose: #e8617a;
+  --color-rose-dim: #5c2733;
+}
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    background: var(--color-ink);
+    color: var(--color-paper);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: var(--color-teal-dim);
+    color: var(--color-paper);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-teal);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+  }
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+}

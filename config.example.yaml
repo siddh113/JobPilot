@@ -1,0 +1,50 @@
+# Copy this file to config.yaml and fill in your real details.
+# config.yaml is gitignored — it will contain your target companies and preferences.
+
+resume_path: ./data/resume_base.md
+
+# JSearch (RapidAPI) key — enables `discover-search`, the no-company-list
+# search-based discovery path. Free to get, no credit card required:
+#   1. Sign up at rapidapi.com (or openwebninja.com — same API, either works)
+#   2. Search for "JSearch" in the marketplace, subscribe to the free Basic plan
+#   3. Copy your API key and paste it below
+# Free tier is capped (a couple hundred requests/month) — discover-search
+# uses one request per title in titles_of_interest per run, so this is
+# plenty for a personal job search, not a bulk pipeline.
+api_keys:
+  rapidapi_key: ""
+
+applicant:
+  first_name: "Your"
+  last_name: "Name"
+  email: "you@example.com"
+  phone: "+1 555 555 5555"
+
+companies:
+  - name: Example Co (Greenhouse)
+    ats_type: greenhouse
+    board_token: exampleco # from the company's job board URL: boards.greenhouse.io/<token>
+  - name: Example Startup (Lever)
+    ats_type: lever
+    board_token: examplestartup # from jobs.lever.co/<token>
+
+match_threshold: 70
+
+# Filters: date posted, remote-only, keyword include/exclude. Set these
+# interactively with `python -m app.cli set-filters`, or edit directly.
+filters:
+  max_days_since_posted: null   # e.g. 14 = only postings from the last 2 weeks
+  remote_only: false
+  exclude_keywords: []          # e.g. ["Staff", "Director", "Security Clearance"]
+  require_keywords: []          # e.g. ["Python"] — at least one must appear
+
+locations_ok:
+  - "New York, NY"
+  - "Remote"
+  - "Remote - US"
+
+titles_of_interest:
+  - "AI Engineer"
+  - "Software Engineer"
+  - "Full Stack Engineer"
+  - "Machine Learning Engineer"

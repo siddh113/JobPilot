@@ -1,0 +1,13 @@
+.env
+config.yaml
+data/
+receipts/
+
+__pycache__/
+*.pyc
+.venv/
+
+node_modules/
+frontend/dist/
+
+.claude/
